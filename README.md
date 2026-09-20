@@ -13,7 +13,7 @@ Requirements
 Usage
 
 Inside the 'data' folder, add the data found in '' (add repository). The data should be organized into the following subfolders for the analysis:
-'absorption', 'anisotropic_diffusion', 'diffusion', 'double_peak'->('polarization', 'pow_dep','sp_res'), 'polarization', 'power' and 'spectra'.
+'anisotropic_diffusion', and 'diffusion'.
 
 After that is ready you can use an IDE to run the code or use the command window by typing: python your\_folder/process_*.py 
 
@@ -25,4 +25,4 @@ Note:
 - Some terminal printouts and graphical elements (e.g., additional legends not shown in the paper figures) have been intentionally left in the code/output for clarity.
 
 To access the data: 
-%check how write it 
+
