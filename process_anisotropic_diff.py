@@ -3,143 +3,122 @@
 
 # Author: Antonella Cutrupi
 
+# Author: Antonella Cutrupi
 import numpy as np
-import os
-import json
-import re
-import glob
-
 import matplotlib
-matplotlib.use('TkAgg')  # Use TkAgg backend for interactive plotting
+
+matplotlib.use('TkAgg')
 
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap, Normalize
 
-# Set up the environment for plotting
+plt.rcParams['font.family'] = 'Arial'
+plt.rcParams['font.size'] = 20
+plt.rcParams['font.style'] = 'normal'
 
-import matplotlib.font_manager as font_manager
-from matplotlib import rcParams
-
-font = font_manager.FontProperties(family='Arial',
-                                   
-                                   style='normal', size=40)
-
-rcParams['font.family'] = font.get_name()
-rcParams['font.size'] = 20
-rcParams['font.style'] = 'normal'
-
-import warnings
-warnings.filterwarnings("ignore")  # Ignore warnings for cleaner output
+SCALE = 0.9
+CAP = np.deg2rad(3.5)
+CMAP_COLORS = [
+    (30/255, 144/255, 255/255),
+    (100/255, 149/255, 237/255),
+    (72/255, 61/255, 139/255),
+    (205/255, 92/255, 92/255),
+    (188/255, 101/255, 106/255),
+]
+CMAP = LinearSegmentedColormap.from_list('custom_grad', CMAP_COLORS)
 
 def angles_and_diffusivities():
+    angle = np.array([70, 80, 90, 85, 110, 175, 105, 95, 120, 135, 115, 100, 190, 50])
+    diff_left = np.array([0.055, 0.058, 0.102, 0.089, 0.112, 0.05, 0.13,
+                          0.119, 0.087, 0.074, 0.083, 0.147, 0.042, 0.052])
+    diff_right = diff_left.copy()
+    error_d = np.array([0.005, 0.004, 0.004, 0.005, 0.003, 0.005, 0.008,
+                        0.006, 0.007, 0.005, 0.004, 0.008, 0.006, 0.004])
+    return angle, diff_left, diff_right, error_d
 
-        angle = np.array([70, 80, 90, 85, 110, 175, 105, 95, 120, 135, 115, 100, 190, 50]) #scan angles in degrees
-        Diff_left = np.array([0.055, 0.058, 0.102, 0.089, 0.112, 0.05, 0.13, 0.119, 0.087, 0.074, 0.083, 0.147, 0.042, 0.052])#cm^2/s
-        Diff_right = np.array([0.055, 0.058, 0.102, 0.089, 0.112, 0.05, 0.13, 0.119, 0.087, 0.074, 0.083, 0.147, 0.042, 0.052])#cm^2/s
-
-        return angle, Diff_left, Diff_right
-
-def data_polar_plot(left_diff, right_diff, scan_angle):
-
-    max_val = max(right_diff.max(), left_diff.max())
-    D_right = right_diff/ max_val * 0.9 
-    D_left  = left_diff / max_val * 0.9
-
-    theta_right = np.deg2rad(scan_angle)
-    theta_left  = np.deg2rad(scan_angle - 180)
-
-    idx_max = np.argmax(left_diff)
-    idx_min = np.argmin(right_diff)
-    angle_max = scan_angle[idx_max]
-    angle_min = scan_angle[idx_min]
-
-    cmap_colors = [
-        (30/255,144/255,255/255),  
-        (100/255,149/255,237/255), 
-        (72/255,61/255,139/255),   
-        (205/255,92/255,92/255),  
-        (188/255,101/255,106/255), 
-    ]
-    cmap = LinearSegmentedColormap.from_list('custom_grad', cmap_colors)
+def compute_colors(angles, diff_left, diff_right):
+    angle_max = angles[np.argmax(diff_left)]
+    angle_min = angles[np.argmin(diff_right)]
+    total_dist = abs(angle_min - angle_max) or 1.0
 
     colors_final = []
-    for a in scan_angle:
+    for a in angles:
         if a == angle_max:
-            colors_final.append('#1f77b4')  
-            colors_final.append('#d62728')             
+            colors_final.append('#1f77b4')
+            colors_final.append('#d62728')
         else:
-            dist = abs(a - angle_max)
-            total_dist = abs(angle_min - angle_max)
-            t = np.clip(dist / total_dist, 0, 1)
-            t = t**0.3  
-            colors_final.append(cmap(t))
+            t = np.clip(abs(a - angle_max) / total_dist, 0, 1)
+            t = t ** 0.3
+            colors_final.append(CMAP(t))
 
-    theta_all = np.concatenate([theta_right, theta_left])
-    r_all = np.concatenate([D_right, D_left])
+    return colors_final
 
-    sorted_indices = np.argsort(theta_all)
-    theta_sorted = theta_all[sorted_indices]
-    r_sorted = r_all[sorted_indices]
+def draw_error_bar(ax, th, r, err, color='gray', lw=1.5):
+    band = np.linspace(th - CAP, th + CAP, 20)
+    ax.fill_between(band, r - err, r + err, color=color, alpha=0.15, zorder=0)
+    ax.plot([th, th], [r - err, r + err], '--', color=color, lw=lw)
+    for edge in (r + err, r - err):
+        ax.plot([th - CAP, th + CAP], [edge, edge], '--', color=color, lw=lw)
 
-    return theta_sorted, r_sorted, D_left, D_right, theta_left, theta_right, cmap, colors_final
 
-def polar_plot(theta,r, theta_r, theta_l, d_right, d_left, cmap, colors_final):
+def polar_plot(scan_angle, diff_right, diff_left, error_d):
+    max_val = max(diff_right.max(), diff_left.max())
+    r_right = diff_right / max_val * SCALE
+    r_left = diff_left / max_val * SCALE
+    err = error_d / max_val * SCALE
 
-    fig = plt.figure(figsize=(8,8))
-    plt.rcParams['font.family'] = 'Arial'
+    th_right = np.deg2rad(scan_angle)
+    th_left = np.deg2rad(scan_angle - 180)
+    colors_final = compute_colors(scan_angle, diff_left, diff_right)
+    th_all = np.concatenate([th_right, th_left])
+    r_all = np.concatenate([r_right, r_left])
+    order = np.argsort(th_all)
+    th_closed = np.append(th_all[order], th_all[order][0])
+    r_closed = np.append(r_all[order], r_all[order][0])
+
+    angle_max = scan_angle[np.argmax(diff_left)]
+
+    fig = plt.figure(figsize=(8, 8))
     ax = plt.subplot(111, projection='polar')
-    ax.plot(theta, r, color='black', linewidth=2, linestyle='--', alpha=0.7)
+    ax.plot(th_closed, r_closed, '--', color='black', lw=2, alpha=0.5)
 
-    for i, (th_r, r_r, th_l, r_l) in enumerate(zip(theta_r, d_right, theta_l, d_left)):
-        c = colors_final[i]
-        ax.plot(th_r, r_r, 'o', markersize=18, color=c)
-        ax.plot(th_l, r_l, 'o', markersize=18, color=c)
-        ax.plot([th_r, th_l], [r_r, r_l], color=c, linewidth=2, alpha=0.5)
-        ax.plot([th_r, th_r], [0, r_r], color=c, linestyle='--', alpha=0.4, linewidth=1)
-        ax.plot([th_l, th_l], [0, r_l], color=c, linestyle='--', alpha=0.4, linewidth=1)
+    j = 0
+    for thr, rr, thl, rl, e, a in zip(th_right, r_right, th_left, r_left, error_d, scan_angle):
+        if a == angle_max:
+            c_r, c_l = colors_final[j], colors_final[j + 1]
+            j += 2
+        else:
+            c_r = c_l = colors_final[j]
+            j += 1
 
-    ax.set_theta_zero_location("E")
-    ax.set_theta_direction(1)
-    ax.set_ylim(0, 0.95)
-    ax.set_xticks(np.deg2rad(np.arange(0, 360, 30)))
-    ax.tick_params(axis='x', labelsize=22, pad=15)
+        ax.plot([thr, thl], [rr, rl], color=c_r, lw=2, alpha=0.5)
+        for th, r, c in ((thr, rr, c_r), (thl, rl, c_l)):
+            draw_error_bar(ax, th, r, e)
+            ax.plot(th, r, 'o', ms=5, color=c, zorder=5)
 
-    ax.plot([], [], 'o', color='#1f77b4', label='$c$ - axis')
-    ax.plot([], [], 'o', color='#d62728', label='$a$ - axis')
-    ax.legend(
-        loc='upper left',
-        bbox_to_anchor=(0.8, 1.1),
-        frameon=False,
-        prop={'family':'Arial', 'size':25},
-        markerscale=3,
-        handlelength=3
-    )
-    ax.set_yticklabels([])
-    norm = Normalize(vmin=min(d_right.min(), d_left.min()), vmax=max(d_right.max(), d_left.max()))
-    sm = plt.cm.ScalarMappable(cmap=cmap.reversed(), norm=norm) 
-    sm.set_array([])
+    margin = (r_all.max() - r_all.min()) * 0.03
+    ax.set_rlim(r_all.min() - margin, r_all.max() + margin)
+    ax.tick_params(axis='both', which='major', labelsize=20)
+    ax.set_yticks([])
 
+    vmin = min(diff_right.min(), diff_left.min())
+    vmax = max(diff_right.max(), diff_left.max())
+    sm = plt.cm.ScalarMappable(cmap=CMAP.reversed(), norm=Normalize(vmin, vmax))
     cbar = plt.colorbar(sm, ax=ax, orientation='horizontal', pad=0.15, fraction=0.05)
+    ticks = [vmin, (vmin + vmax) / 2, vmax]
+    cbar.set_ticks(ticks)
+    cbar.set_ticklabels([f'{t:.3f}' for t in ticks])
     cbar.set_label('Diffusivity (cm²/s)', fontsize=24)
     cbar.ax.tick_params(labelsize=24)
+
     plt.tight_layout()
+    return fig, ax
 
 #%%
-
-def main():
-
-    angle, Diff_left, Diff_right = angles_and_diffusivities()
-
-    theta_sorted, r_sorted, D_left, D_right, theta_l, theta_r, cmap, color_plot = data_polar_plot(Diff_left, Diff_right, angle)
-
-    #Figure 4d)
-    polar_plot(theta_sorted,r_sorted, theta_r, theta_l, D_right, D_left, cmap, color_plot)
-
-
-if __name__ == "__main__":
-    import matplotlib.pyplot as plt
-    main()
-    plt.show()  # Show the plots interactively
+if __name__ == '__main__':
+    angle, diff_left, diff_right, error_d = angles_and_diffusivities()
+    polar_plot(angle, diff_right, diff_left, error_d)
+    plt.show()
 
 
 # %%
